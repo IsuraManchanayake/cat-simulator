@@ -40,10 +40,41 @@ def parse_args():
         help='Terrain width.',
     )
     parser.add_argument(
-        '--t_elevation_file',
+        '--hour_of_day',
+        type=int,
+        default=0,
+        help='Starting hour of simulation.',
+    )
+    parser.add_argument(
+        '--neighborhood',
         type=str,
-        help='Terrain elevation as a text file. If specified, t_height and t_width are ignored. If not '
-             'specified, terrain is chosen flat. If invalid, the simulation exits.',
+        default='moore',
+        choices=('moore', 'von-neumann'),
+        help='Neighborhood algorithm.',
+    )
+    parser.add_argument(
+        '--neighborhood_radius',
+        type=int,
+        default=3,
+        help='Neighborhood radius.',
+    )
+    parser.add_argument(
+        '--continuous_food',
+        action='store_true',
+        help='Flag to set continuous food suppy at food locations. If not set, food will be set periodically at the '
+             '12th hour of the day.',
+    )
+    parser.add_argument(
+        '--t_elevations_file',
+        type=str,
+        help='Terrain elevations as a text file. If specified, t_height and t_width are ignored. If not '
+             'specified, elevations are set to 0. If invalid, the simulation exits.',
+    )
+    parser.add_argument(
+        '--t_cell_types_file',
+        type=str,
+        help='Terrain cell types as a text file. If specified, t_height and t_width are ignored. If not '
+             'specified, cell types are chosen random. If invalid, the simulation exits.',
     )
     parser.add_argument(
         '--seed',
