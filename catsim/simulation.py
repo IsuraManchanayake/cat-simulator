@@ -1,9 +1,11 @@
-import random
+import json
 import math
+import random
 import time
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+from pynput import keyboard
 
 from .config import Config
 from .enums import Personality, Gender, CellType, Neighborhood, State
@@ -57,13 +59,25 @@ class Simulation:
         self.cell_types = None
         self.current_population = None
 
+        self._cats = []  # For internal tracking
+
         self.log_forces = True
         self.start_time = None
 
-        self.save_file = f'simulation-state-{datetime.now()}.json'
+        self.key_listener = keyboard.Listener(on_press=lambda key: self._on_key_press(key, self))
+        self.key_listener.start()
+
+        self.save_file = f'states/simulation-state-{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.json'
 
         self.render_enabled = True
-        self.render_pause = 0.0001
+        self.render_pause_interval = 0.0001
+        self.render_pause = False
+        # self.ani = None  # Animation
+
+    @staticmethod
+    def _on_key_press(key, simulation):
+        if str(key) == "'p'":
+            simulation.render_pause = not simulation.render_pause
 
     def _setup_from_file(self):
         pass
@@ -160,6 +174,7 @@ class Simulation:
                 state=State.active
             )
             self.terrain.put_cat(cat=cat)
+            self._cats.append(cat)
 
         # for row in self.terrain.grid:
         #     for cell in row:
@@ -182,10 +197,25 @@ class Simulation:
     def render(self):
         if not self.render_enabled:
             return
+
         plt.clf()
         self.terrain.render()
+
         plt.figtext(0.82, 0.2, self.annot())
-        plt.pause(self.render_pause)
+        title = 'Cat Simulation'
+        bottom_text = 'Press P to pause'
+        if self.render_pause:
+            title += ' (Paused)'
+            bottom_text = 'Press P again to resume'
+        plt.title(title)
+        plt.figtext(0.5, 0.01, bottom_text, ha="center")
+
+        plt.pause(self.render_pause_interval)
+
+        while self.render_pause:
+            plt.title(title)
+            plt.pause(self.render_pause_interval)
+            time.sleep(0.1)
 
     def annot(self):
         s = ''
@@ -194,11 +224,38 @@ class Simulation:
         return s
 
     def serialize(self):
-        pass
+        return dict(
+            seed=self.seed,
+            n_steps=self.n_steps,
+            population=self.population,
+            hour_of_day=self.hour_of_day,
+            neighborhood=str(self.neighborhood),
+            neighborhood_radius=self.neighborhood_radius,
+            continuous_food=self.continuous_food,
+            step=self.step,
+            width=self.width,
+            height=self.height,
+            current_population=self.current_population,
+            cat_next_id=Cat.next_id(),
+            elevations=self.elevations,
+            cell_types=[str(ct) for ct in self.cell_types],
+            terrain=self.terrain.serialize(),
+        )
+
+    def save_state(self):
+        data = self.serialize()
+        with open(self.save_file, 'w') as sf:
+            json.dump(data, sf, indent=2)
 
     def _pre_update(self, cat, next_cats: list):
         cat.start_step()
         # -- Do actions --
+        # Sleep if necessary
+        if not cat.is_sleeping():
+            sleep_probability = get_sleep_probability(self.terrain.cell_at(cat.position).cell_type, cat.health)
+            if random.uniform(0, 1) < sleep_probability:
+                cat.sleep()
+
         # Force wake up if health is low
         if cat.is_sleeping() and cat.health < Config.force_wake_up_health:
             Logger.log(f'[Alert] {cat} is forced to wake-up!')
@@ -221,6 +278,7 @@ class Simulation:
         if cat.is_pregnant() and cat.hours_since_last_conception >= Config.hours_to_deliver_offspring:
             cat_baby = cat.deliver()
             next_cats.append(cat_baby)
+            self._cats.append(cat_baby)
 
     def _update(self, cat):
         cell = self.terrain.cell_at(cat.position)
@@ -233,73 +291,85 @@ class Simulation:
 
         # -- Calculate forces --
         force = Vec2(0, 0)
-        neighbors = self.terrain.neighbors(center=cat.position, r=self.neighborhood_radius,
+        food_radius = self.neighborhood_radius
+        if cat.health < 10:
+            food_radius = 3 * self.neighborhood_radius
+        elif cat.health < 25:
+            food_radius = 2 * self.neighborhood_radius
+        neighbors = self.terrain.neighbors(center=cat.position, r=food_radius,
                                            neighborhood=self.neighborhood)
-
         for other_cell in neighbors:
             # Food attraction
             if other_cell.cell_type == CellType.food:
                 food_attraction = (other_cell.food_amount / 100) * cat.food_attraction()
-                force += calc_force(food_attraction, cat.position, other_cell.position)
+                food_force = calc_force(food_attraction, cat.position, other_cell.position)
+                force += food_force
                 if self.log_forces:
-                    Logger.log(f'[Force][Food] A force {force} is exerted on {cat}')
+                    Logger.log(f'[Force][Food] A force {food_force} is exerted on {cat}')
 
+        neighbors = self.terrain.neighbors(center=cat.position, r=self.neighborhood_radius,
+                                           neighborhood=self.neighborhood)
+        for other_cell in neighbors:
             # Bed attraction
             if other_cell.cell_type == CellType.bed:
                 bed_attraction = cat.bed_attraction()
-                force += calc_force(bed_attraction, cat.position, other_cell.position)
+                bed_force = calc_force(bed_attraction, cat.position, other_cell.position)
+                force += bed_force
                 if self.log_forces:
-                    Logger.log(f'[Force][Bed] A force {force} is exerted on {cat}')
+                    Logger.log(f'[Force][Bed] A force {bed_force} is exerted on {cat}')
 
             # Box attraction
             if other_cell.cell_type == CellType.box:
                 box_attraction = cat.box_attraction()
-                force += calc_force(box_attraction, cat.position, other_cell.position)
+                box_force = calc_force(box_attraction, cat.position, other_cell.position)
+                force += box_force
                 if self.log_forces:
-                    Logger.log(f'[Force][Box] A force {force} is exerted on {cat}')
+                    Logger.log(f'[Force][Box] A force {box_force} is exerted on {cat}')
 
             # Mutual attraction
             for other_cat in other_cell.cats:
                 if other_cat.cat_id == cat.cat_id:
                     continue
                 mutual_attraction = cat.mutual_attraction(other_cat, self.temperature())
-                force += calc_force(mutual_attraction, cat.position, other_cell.position)
+                mututal_force = calc_force(mutual_attraction, cat.position, other_cell.position)
+                force += mututal_force
                 if self.log_forces:
-                    Logger.log(f'[Force][Mutual] A force {force} is exerted on {cat} by {other_cat}')
+                    Logger.log(f'[Force][Mutual] A force {mututal_force} is exerted on {cat} by {other_cat}')
 
             # Trace attraction
             if other_cell.x_trace > 0 or other_cell.y_trace > 0:
                 trace_attraction = cat.trace_attraction(other_cell.x_trace, other_cell.y_trace)
-                force += calc_force(trace_attraction, cat.position, other_cell.position)
+                trace_force = calc_force(trace_attraction, cat.position, other_cell.position)
+                force += trace_force
                 if self.log_forces:
-                    Logger.log(f'[Force][Trace] A force {force} is exerted on {cat} by cell at {other_cell.position} '
+                    Logger.log(f'[Force][Trace] A force {trace_force} is exerted on {cat} by cell at {other_cell.position} '
                                f'x_trace={other_cell.x_trace} y_trace={other_cell.y_trace}')
 
+            # Randomness
+            random_force = cat.random_force()
+            force += random_force
+            if self.log_forces:
+                Logger.log(f'[Force][Random] A force {random_force} is exerted on {cat} randomly')
+
         cat.add_force(force)
+        if self.log_forces:
+            Logger.log(f'[Force] Total force of {cat.get_force()} is exerted on {cat}')
 
     def _post_update(self, cat, next_cats):
         # Calculate movement with calculated force and elevation
-        if not cat.is_sleeping() and cat.get_force().x == 0 and cat.get_force().y == 0:
-            cat.add_force(Vec2(random.uniform(2, -2), random.uniform(2, -2)))
-
-        if self.log_forces:
-            Logger.log(f'[Force] Total force of {cat.get_force()} is exerted on {cat}')
+        Logger.log(f'Target position {cat.position + cat.get_force()}')
         target_position = self.terrain.clamp(cat.position, cat.position + cat.get_force())
+        Logger.log(f'Target position {target_position}')
         if cat.position != target_position:
             health_damage = self.terrain.health_damange_to_travel(cat.position, target_position)
             cat.move(target_position, health_damage)
 
-        if not cat.is_sleeping():
-            sleep_probability = get_sleep_probability(self.terrain.cell_at(cat.position).cell_type, cat.health)
-            if random.uniform(0, 1) < sleep_probability:
-                cat.sleep()
-
         cat.finalize_step()
 
-        if not cat.is_dead():
+        if not cat.should_die():
             next_cats.append(cat)
         else:
-            Logger.log(f'[Alert] RIP {cat} :(')
+            cat.die()
 
     def update(self):
         step = self.step + 1
@@ -340,6 +410,9 @@ class Simulation:
                 for cat in self.terrain.cats_at(Vec2(x, y)):
                     self._post_update(cat, next_cats)
 
+        for cat in self._cats:
+            cat.update_state_hours()
+
         # Put new cats to the next terrain
         for next_cat in next_cats:
             next_terrain.put_cat(next_cat)
@@ -362,24 +435,22 @@ class Simulation:
         self.hour_of_day = (self.hour_of_day + 1) % 24
 
         self.render()
+        self.save_state()
 
     def finished(self):
-        return self.step >= self.n_steps
+        return self.step >= self.n_steps or self.population <= 0
 
     def finalize(self):
         Logger.sep()
         Logger.log('Simulation is finishing')
 
-        if self.render_enabled:
-            plt.show()
-
-        cats = []
-        for y in range(self.height):
-            for x in range(self.width):
-                cell = self.terrain.at(x, y)
-                for cat in cell.cats:
-                    cats.append(cat)
-        cats.sort(key=lambda c: c.cat_id)
+        # cats = []
+        # for y in range(self.height):
+        #     for x in range(self.width):
+        #         cell = self.terrain.at(x, y)
+        #         for cat in cell.cats:
+        #             cats.append(cat)
+        self._cats.sort(key=lambda c: c.cat_id)
 
         if not self.continuous_food:
             for y in range(self.height):
@@ -388,9 +459,15 @@ class Simulation:
                     if cell.cell_type == CellType.food:
                         Logger.log(f'Cell at {cell.position} has {cell.food_amount} food remaining')
 
-        Logger.log(f'{len(cats)} cats alive')
-        for cat in cats:
+        Logger.log(f'{len(self._cats)} cats alive')
+        for cat in self._cats:
             Logger.log(f'{cat}')
+            state_hours = {str(state): hours for state, hours in cat.state_hours.items()}
+            Logger.log(f'This cat spent time doing {state_hours}')
+            Logger.log(f'This cat moved total distance of {cat.total_distance_moved:.2f} units')
 
         Logger.log('Simulation is finished')
         Logger.log(f'Elapsed {time.time() - self.start_time} s')
+
+        if self.render_enabled:
+            plt.show()

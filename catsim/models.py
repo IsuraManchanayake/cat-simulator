@@ -9,14 +9,19 @@ from .logging import Logger
 
 
 class Cat:
-    _count = 0
+    _next_id = 0
 
     def __init__(self, position: Vec2, age: float, gender: Gender, personality: Personality, health: int, state: State,
-                 sleep_duration=0, fetus=None, hours_since_last_conception=None, cat_id=None):
+                 sleep_duration=0, total_distance_moved=0, state_hours=None, fetus=None,
+                 hours_since_last_conception=None, cat_id=None):
         """
         Age is in years.
         """
-        self.cat_id = Cat._count if cat_id is None else cat_id
+        if state_hours is None:
+            state_hours = {state: 0 for state in State}
+        if cat_id is not None:
+            Cat._next_id = max(Cat._next_id, cat_id)
+        self.cat_id = Cat._next_id
         self.position = position
         self.age = age
         self.gender = gender
@@ -27,10 +32,13 @@ class Cat:
         self.sleep_duration = sleep_duration
         self.fetus = fetus
 
-        Cat._count += 1
+        Cat._next_id += 1
         self._force = Vec2(0, 0)
         self._health = self.health
         self._step_finalized = True
+
+        self.state_hours = state_hours  # How much time spent on each state
+        self.total_distance_moved = total_distance_moved
 
         Logger.log(f'[Create] Cat is created {self}')
 
@@ -85,7 +93,7 @@ class Cat:
             return 0.5
         else:
             if self.health > 95:
-                return 0.5
+                return 0.3
             else:
                 return 0.1
 
@@ -100,10 +108,17 @@ class Cat:
         effective_trace = same_personality_trace - opposite_personality_trace
         return effective_trace * Config.trace_attraction_factor
 
+    def random_force(self):
+        if self.is_sleeping():
+            return Vec2(0, 0)
+        return Vec2(random.uniform(1, -1), random.uniform(1, -1))
+
     def move(self, target_position, health_damage):
         Logger.log(f'[Action] {self} is moving to {target_position}')
+        distance = (target_position - self.position).norm()
         self.position = target_position
         self.damage_health(health_damage)
+        self.total_distance_moved += distance
 
     def interact(self, other_cat: 'Cat', temperature: float):
         """
@@ -118,13 +133,16 @@ class Cat:
         if self.gender != other_cat.gender:
             if self.is_sexually_active() and other_cat.is_sexually_active():
                 reproduction_probability = 0.9 if temperature > 28 else 0.7
-                if random.uniform(0, 1) < reproduction_probability:
+                if random.uniform(0, 1) < reproduction_probability and self.health > 25 and other_cat.health > 25:
                     female_cat, male_cat = Cat.choose_female_cat(self, other_cat)
+                    # Reproduction needs energy
+                    self.damage_health(20)
+                    other_cat.damage_health(20)
                     female_cat.conceive(male_cat)
                     return
         if self.personality != other_cat.personality:
             dominance = self._dominance_factor(other_cat)
-            attacking_probability = min(0.0, dominance)
+            attacking_probability = max(0.0, dominance)
             if random.uniform(0, 1) < attacking_probability:
                 power = dominance * 10
                 self.attack(other_cat, power)
@@ -151,7 +169,7 @@ class Cat:
             age=0,
             gender=Gender.random(),
             health=max_health(0),
-            state=State.sleeping,
+            state=State.fetus,
         )
 
     def deliver(self):
@@ -175,12 +193,17 @@ class Cat:
         self._health = max(0, self._health - amount)
 
     def age_up(self, hours=1):
-        self.age += hours/(365 * 24)
+        self.age += hours / (365 * 24)
         self.damage_health(1)
         if self.state == State.sleeping:
             self.sleep_duration += hours
         if self.hours_since_last_conception is not None:
             self.hours_since_last_conception += hours
+
+    def update_state_hours(self, hours=1):
+        self.state_hours[self.state] += hours
+        if self.is_pregnant():
+            self.fetus.update_state_hours(hours)
 
     def wake_up(self):
         Logger.log(f'[Action] {self} is wake-up after {self.sleep_duration} hours of sleep')
@@ -191,6 +214,10 @@ class Cat:
         Logger.log(f'[Action] {self} is starting to sleep')
         self.state = State.sleeping
         self.sleep_duration = 0
+
+    def die(self):
+        Logger.log(f'[Action] RIP {self} :(')
+        self.state = State.dead
 
     def add_force(self, force):
         self._force += force
@@ -219,8 +246,12 @@ class Cat:
     def is_sleeping(self):
         return self.state == State.sleeping
 
-    def is_dead(self):
+    def should_die(self):
         return self.health <= 0 or self.age >= Config.max_life_span
+
+    @staticmethod
+    def next_id():
+        return Cat._next_id
 
     def __hash__(self):
         return hash((self.cat_id,))
@@ -239,6 +270,20 @@ class Cat:
             s += f'    fetus={self.fetus.annot()}'
         s += '}'
         return s
+
+    def serialize(self):
+        return dict(
+            cat_id=self.cat_id,
+            age=self.age,
+            gender=str(self.gender),
+            personality=str(self.personality),
+            health=self.health,
+            state=str(self.state),
+            hours_since_last_conception=self.hours_since_last_conception,
+            sleep_duration=self.sleep_duration,
+            position=self.position.serialize(),
+            fetus=self.fetus.serialize() if self.fetus is not None else None,
+        )
 
     def __repr__(self):
         return f'Cat{{cat_id={self.cat_id}, position={self.position}, age={self.age:.4f}, health={self.health:.4f}, ' \

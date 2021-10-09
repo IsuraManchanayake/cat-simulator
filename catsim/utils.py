@@ -39,18 +39,19 @@ def random_cell_type_list(k):
 
 
 def calc_force(magnitude: float, from_v: Vec2, to_v: Vec2):
-    return magnitude * (to_v - from_v).unit()
+    return 10 * magnitude * (to_v - from_v).unit()
 
 
 def get_sleep_probability(cell_type, health):
     p = {
-        CellType.floor: 0.4,
-        CellType.bed: 0.7,
-        CellType.box: 0.8,
-        CellType.food: 0.1,
+        CellType.floor: 0.05,
+        CellType.bed: 0.2,
+        CellType.box: 0.4,
+        CellType.food: 0.01,
     }[cell_type]
-    if health > 90:
-        p *= 1.05
+    if health > 95:
+        p *= 1.02
+    p = min(1, p)
     return p
 
 

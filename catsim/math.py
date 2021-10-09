@@ -32,6 +32,9 @@ class Vec2:
     def dot(self, other: 'Vec2'):
         return self.x * other.x + self.y * other.y
 
+    def serialize(self):
+        return dict(x=self.x, y=self.y)
+
     def __repr__(self):
         return f'{{x={round(self.x, 3)},y={round(self.y, 3)}}}'
         # return f'{{x={self.x:.2f},y={self.y:.2f}}}'

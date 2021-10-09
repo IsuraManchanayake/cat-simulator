@@ -46,6 +46,17 @@ class Cell:
             s += cat.annot() + '\n'
         return s
 
+    def serialize(self):
+        return dict(
+            position=self.position.serialize(),
+            x_trace=self.x_trace,
+            y_trace=self.y_trace,
+            cell_type=str(self.cell_type),
+            food_amount=self.food_amount,
+            elevation=self.elevation,
+            cats=[cat.serialize() for cat in self.cats],
+        )
+
     def __repr__(self):
         return f'Cell{{position={self.position},cats={str(self.cats)},x_trace={self.x_trace},y_trace={self.y_trace},' \
                f'cell_type={self.cell_type},food_amount={self.food_amount},elevation={self.elevation}}}'
@@ -56,7 +67,6 @@ class Terrain:
         self.width = width
         self.height = height
         self.grid = []
-        self.elevations = elevations
         for y in range(height):
             row = []
             for x in range(width):
@@ -110,7 +120,7 @@ class Terrain:
 
     def health_damange_to_travel(self, from_pos: Vec2, to_pos: Vec2):
         elevation_difference = self.cell_at(to_pos).elevation - self.cell_at(from_pos).elevation
-        return max(0, elevation_difference) + (to_pos - from_pos).norm()
+        return (max(0, elevation_difference) + (to_pos - from_pos).norm()) / 10
 
     def _clamp(self, from_vec, to_vec):
         boundaries = [
@@ -125,7 +135,7 @@ class Terrain:
             q_pxr = cross(q_p, r)
             q_pxs = cross(q_p, s)
             rxs = cross(r, s)
-            if q_pxr == 0.0:
+            if q_pxr == 0.0 and rxs == 0.0:
                 # Co-linear
                 u1 = (p + r - q).dot(s) / s.dot(s)
                 if u1 < 0:
@@ -196,13 +206,13 @@ class Terrain:
                     cat_colors.append(int_to_color_hash(cat.cat_id))
             cell_colors.append(cell_color_row)
 
+        sc = plt.scatter(xvalues, yvalues, c=cat_colors)
+
         ax = plt.gca()
         for y in range(self.height - 1):
             ax.axhline(y + 0.5, linestyle='-', lw=0.5, alpha=0.3)
         for x in range(self.width - 1):
             ax.axvline(x + 0.5, linestyle='-', lw=0.5, alpha=0.3)
-
-        sc = plt.scatter(xvalues, yvalues, c=cat_colors)
 
         # ax.axes.xaxis.set_visible(False)
         # ax.axes.yaxis.set_visible(False)
@@ -226,6 +236,10 @@ class Terrain:
         def _update_annot(event, terrain):
             annot.xy = (event.xdata, event.ydata)
             pos = terrain.make_lattice(Vec2(event.xdata, event.ydata))
+            if pos.y > terrain.height / 2:
+                annot.xyann = (20, -60)
+            else:
+                annot.xyann = (20, 20)
             annot.set_text(terrain.cell_at(pos).annot())
             annot.get_bbox_patch().set_alpha(0.4)
             annot.set_visible(True)
@@ -249,14 +263,17 @@ class Terrain:
         plt.ylim(-0.5, self.height - 0.5)
         plt.subplots_adjust(right=0.8)
 
+    def serialize(self):
+        return dict(
+            width=self.width,
+            height=self.height,
+            grid=[[cell.serialize() for cell in row] for row in self.grid],
+        )
+
     def __repr__(self):
         res = ''
         for y in range(self.height):
             for x in range(self.width):
                 res += str(self.grid[y][x])
-                # res += '{'
-                # res += f'ele: {self.elevations[y][x]}'
-                # res += str(self.grid[y][x])
-                # res += '} '
             res += '\n'
         return res

@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import IntEnum, Enum
 from random import randrange
 
 
@@ -26,6 +26,7 @@ class State(RandomaziableEnum):
     fetus = 0
     active = 1
     sleeping = 2
+    dead = 3
 
 
 class CellType(RandomaziableEnum):
@@ -35,12 +36,12 @@ class CellType(RandomaziableEnum):
     box = 3
 
 
-class Neighborhood(Enum):
+class Neighborhood(IntEnum):
     Moore = 0
     VonNeumann = 1
 
 
-class LogMethod:
+class LogMethod(IntEnum):
     none = 0
     console = 1
     file = 2

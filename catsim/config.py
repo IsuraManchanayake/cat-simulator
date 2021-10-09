@@ -11,6 +11,6 @@ class Config:
     max_life_span = 10
     sleep_time = 4
     trace_attraction_factor = 0.5
-    new_food_amount = 10
+    new_food_amount = 30
     start_food_amount = 100
     continuous_food_amount = 100
