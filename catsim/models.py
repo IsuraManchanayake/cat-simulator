@@ -8,17 +8,63 @@ from .utils import max_health
 from .logging import Logger
 
 
+class CatSummary:
+    def __init__(self):
+        self.state_hours = {state: 0 for state in State}
+        self.attacked = 0
+        self.got_attacked = 0
+        self.conceived = 0
+        self.delivered = 0
+        self.lost_health = 0
+        self.consumed_food = 0
+        self.moved = 0
+        self.aged = 0
+
+    def update_moved(self, distance):
+        self.moved += distance
+
+    def update_conceived(self):
+        self.conceived += 1
+
+    def update_attacked(self, amount):
+        self.attacked += amount
+
+    def update_got_attacked(self, amount):
+        self.got_attacked += amount
+
+    def update_delivered(self):
+        self.delivered += 1
+
+    def update_consumed_food(self, amount):
+        self.consumed_food += amount
+
+    def update_lost_health(self, amount):
+        self.lost_health += amount
+
+    def update_aged(self, years):
+        self.aged += years
+
+    def update_state_hours(self, state, hours):
+        self.state_hours[state] += hours
+
+    def __repr__(self):
+        state_hours = {str(state): hours for state, hours in self.state_hours.items()}
+        return f'Summary{{state_hours={state_hours}, attacked={self.attacked}, got_attacked={self.got_attacked}' \
+               f', conceived={self.conceived}, delivered={self.delivered}, lost_health={self.lost_health}' \
+               f', consumed_food={self.consumed_food}, moved={self.moved}, aged={self.aged}}}'
+
+
 class Cat:
     _next_id = 0
 
     def __init__(self, position: Vec2, age: float, gender: Gender, personality: Personality, health: int, state: State,
-                 sleep_duration=0, total_distance_moved=0, state_hours=None, fetus=None,
+                 sleep_duration=0, total_distance_moved=0, summary=None, fetus=None,
                  hours_since_last_conception=None, cat_id=None):
         """
         Age is in years.
         """
-        if state_hours is None:
-            state_hours = {state: 0 for state in State}
+        if summary is None:
+            summary = CatSummary()
         if cat_id is not None:
             Cat._next_id = max(Cat._next_id, cat_id)
         self.cat_id = Cat._next_id
@@ -37,8 +83,7 @@ class Cat:
         self._health = self.health
         self._step_finalized = True
 
-        self.state_hours = state_hours  # How much time spent on each state
-        self.total_distance_moved = total_distance_moved
+        self.summary = summary
 
         Logger.log(f'[Create] Cat is created {self}')
 
@@ -75,7 +120,7 @@ class Cat:
         # return factor
 
     def _strength(self):
-        return self.health / 100
+        return self.health / 50
 
     def food_attraction(self):
         """
@@ -118,7 +163,7 @@ class Cat:
         distance = (target_position - self.position).norm()
         self.position = target_position
         self.damage_health(health_damage)
-        self.total_distance_moved += distance
+        self.summary.update_moved(distance)
 
     def interact(self, other_cat: 'Cat', temperature: float):
         """
@@ -159,13 +204,16 @@ class Cat:
         Logger.log(f'[Action] {self} is attacking {other_cat} with {power} power')
         other_cat.damage_health(power)
         self.damage_health(power / 5)  # Attacking drains energy
+        other_cat.summary.update_got_attacked(power)
+        self.summary.update_attacked(power)
 
     def conceive(self, other_cat):
         Logger.log(f'[Action] {self} got conceived by {other_cat}')
         self.hours_since_last_conception = 0
+        self.summary.update_conceived()
         self.fetus = Cat(
             position=self.position,
-            personality=random.choice([self.gender, other_cat.personality]),
+            personality=random.choice([self.personality, other_cat.personality]),
             age=0,
             gender=Gender.random(),
             health=max_health(0),
@@ -179,21 +227,28 @@ class Cat:
         self.fetus = None
         cat_baby.position = self.position
         cat_baby.state = State.active
+        self.summary.update_delivered()
         Logger.log(f'[Action] {self} delivered {cat_baby}')
         return cat_baby
 
     def consume_food(self, amount):
         Logger.log(f'[Action] {self} is consuming {amount} foods')
-        self._health = min(self.max_health(), self._health + amount)
+        final_amount = min(self.max_health(), self._health + amount)
+        self.summary.update_consumed_food(final_amount - self._health)
+        self._health = final_amount
 
     def damage_health(self, amount):
         # if amount == 0:
         #     return
         Logger.log(f'[Alert] {self} got damaged {amount}')
-        self._health = max(0, self._health - amount)
+        final_amount = max(0, self._health - amount)
+        self.summary.update_lost_health(self._health - final_amount)
+        self._health = final_amount
 
     def age_up(self, hours=1):
-        self.age += hours / (365 * 24)
+        years = hours / (365 * 24)
+        self.age += years
+        self.summary.update_aged(years)
         self.damage_health(1)
         if self.state == State.sleeping:
             self.sleep_duration += hours
@@ -201,9 +256,9 @@ class Cat:
             self.hours_since_last_conception += hours
 
     def update_state_hours(self, hours=1):
-        self.state_hours[self.state] += hours
+        self.summary.update_state_hours(self.state, hours)
         if self.is_pregnant():
-            self.fetus.update_state_hours(hours)
+            self.fetus.summary.update_state_hours(self.state, hours)
 
     def wake_up(self):
         Logger.log(f'[Action] {self} is wake-up after {self.sleep_duration} hours of sleep')

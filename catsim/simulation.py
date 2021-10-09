@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from pynput import keyboard
 
 from .config import Config
@@ -15,7 +16,6 @@ from .math import Vec2
 from .utils import (
     char_to_cell_type,
     random_cell_type_list,
-    cell_type_to_char,
     max_health,
     get_sleep_probability,
     calc_force,
@@ -51,9 +51,9 @@ class Simulation:
         self.neighborhood = None
         self.neighborhood_radius = None
         self.continuous_food = None
-        self.step = None
-        self.width = None
-        self.height = None
+        self.step = 0
+        self.width = 0
+        self.height = 0
         self.terrain = None
         self.elevations = None
         self.cell_types = None
@@ -70,14 +70,20 @@ class Simulation:
         self.save_file = f'states/simulation-state-{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.json'
 
         self.render_enabled = True
-        self.render_pause_interval = 0.0001
+        self.render_pause_interval = 0.1
         self.render_pause = False
-        # self.ani = None  # Animation
+        self.plots = dict()  # render plots
+        self.axs = []
+        self.fig = None
+        self.ani = None  # Animation
 
     @staticmethod
     def _on_key_press(key, simulation):
         if str(key) == "'p'":
             simulation.render_pause = not simulation.render_pause
+        # Pause is done in render step to render text before going pause
+        if simulation.ani is not None:
+            simulation.ani.event_source.start()  # Unpause
 
     def _setup_from_file(self):
         pass
@@ -176,12 +182,7 @@ class Simulation:
             self.terrain.put_cat(cat=cat)
             self._cats.append(cat)
 
-        # for row in self.terrain.grid:
-        #     for cell in row:
-        #         print(cell_type_to_char(cell.cell_type), end=' ')
-        #     print()
-
-    def setup(self):
+    def _setup(self):
         Logger.log('Setting up simulation')
         t = time.time()
         self.start_time = t
@@ -189,33 +190,11 @@ class Simulation:
             self._setup_from_file()
         else:
             self._setup_from_parameters()
+        self._render_init()
         Logger.log(f'Elapsed {time.time() - t} s')
 
     def temperature(self):
         return 25 - 5 * math.cos(math.pi * self.hour_of_day / 12)
-
-    def render(self):
-        if not self.render_enabled:
-            return
-
-        plt.clf()
-        self.terrain.render()
-
-        plt.figtext(0.82, 0.2, self.annot())
-        title = 'Cat Simulation'
-        bottom_text = 'Press P to pause'
-        if self.render_pause:
-            title += ' (Paused)'
-            bottom_text = 'Press P again to resume'
-        plt.title(title)
-        plt.figtext(0.5, 0.01, bottom_text, ha="center")
-
-        plt.pause(self.render_pause_interval)
-
-        while self.render_pause:
-            plt.title(title)
-            plt.pause(self.render_pause_interval)
-            time.sleep(0.1)
 
     def annot(self):
         s = ''
@@ -295,7 +274,7 @@ class Simulation:
         if cat.health < 10:
             food_radius = 3 * self.neighborhood_radius
         elif cat.health < 25:
-            food_radius = 2 * self.neighborhood_radius
+            food_radius = 1.5 * self.neighborhood_radius
         neighbors = self.terrain.neighbors(center=cat.position, r=food_radius,
                                            neighborhood=self.neighborhood)
         for other_cell in neighbors:
@@ -342,8 +321,9 @@ class Simulation:
                 trace_force = calc_force(trace_attraction, cat.position, other_cell.position)
                 force += trace_force
                 if self.log_forces:
-                    Logger.log(f'[Force][Trace] A force {trace_force} is exerted on {cat} by cell at {other_cell.position} '
-                               f'x_trace={other_cell.x_trace} y_trace={other_cell.y_trace}')
+                    Logger.log(
+                        f'[Force][Trace] A force {trace_force} is exerted on {cat} by cell at {other_cell.position} '
+                        f'x_trace={other_cell.x_trace} y_trace={other_cell.y_trace}')
 
             # Randomness
             random_force = cat.random_force()
@@ -357,7 +337,7 @@ class Simulation:
 
     def _post_update(self, cat, next_cats):
         # Calculate movement with calculated force and elevation
-        Logger.log(f'Target position {cat.position + cat.get_force()}')
+        Logger.log(f'From position {cat.position} Target position {cat.position + cat.get_force()}')
         target_position = self.terrain.clamp(cat.position, cat.position + cat.get_force())
         Logger.log(f'Target position {target_position}')
         if cat.position != target_position:
@@ -434,22 +414,67 @@ class Simulation:
         self.step += 1
         self.hour_of_day = (self.hour_of_day + 1) % 24
 
-        self.render()
         self.save_state()
 
-    def finished(self):
+    def _render_init(self):
+        if not self.render_enabled:
+            return
+        self.terrain.render_init(self.plots, self.axs, self.fig)
+        self.plots['stat'] = self.fig.text(0.5, 0.1, '', ha="center")
+        self.plots['bottom'] = self.fig.text(0.5, 0.01, '', ha="center")
+
+    def _render(self, _step):
+        if not self.render_enabled:
+            return None,
+
+        title_text = 'Cat Simulation'
+        bottom_text = 'Press P to pause'
+        if self.step == self.n_steps:
+            title_text += ' (Completed)'
+        if self.render_pause:
+            title_text += ' (Paused)'
+            bottom_text = 'Press P again to resume'
+        self.fig.suptitle(title_text)
+        self.plots['stat'].set_text(self.annot())
+        self.plots['bottom'].set_text(bottom_text)
+
+        if self.render_pause:
+            self.ani.event_source.stop()  # pause
+
+        self.terrain.render(self.plots, self.axs, self.fig)
+        return self.plots.values()
+
+    def _loop(self):
+        self._setup()
+        while not self.is_finished():
+            self.update()
+            yield self.step,
+        self._finalize()
+
+    def start(self):
+        if self.render_enabled:
+            self.fig, self.axs = plt.subplots(1, 3)
+            self.ani = animation.FuncAnimation(
+                plt.gcf(),
+                self._render,
+                self._loop,
+                save_count=1,
+                init_func=lambda: None,
+                interval=self.render_pause_interval * 1000,
+                repeat=False,
+            )
+            plt.show()
+        else:
+            for _step in self._loop():
+                continue
+
+    def is_finished(self):
         return self.step >= self.n_steps or self.population <= 0
 
-    def finalize(self):
+    def _finalize(self):
         Logger.sep()
         Logger.log('Simulation is finishing')
 
-        # cats = []
-        # for y in range(self.height):
-        #     for x in range(self.width):
-        #         cell = self.terrain.at(x, y)
-        #         for cat in cell.cats:
-        #             cats.append(cat)
         self._cats.sort(key=lambda c: c.cat_id)
 
         if not self.continuous_food:
@@ -462,12 +487,10 @@ class Simulation:
         Logger.log(f'{len(self._cats)} cats alive')
         for cat in self._cats:
             Logger.log(f'{cat}')
-            state_hours = {str(state): hours for state, hours in cat.state_hours.items()}
-            Logger.log(f'This cat spent time doing {state_hours}')
-            Logger.log(f'This cat moved total distance of {cat.total_distance_moved:.2f} units')
+            Logger.log(cat.summary)
+            # state_hours = {str(state): hours for state, hours in cat.state_hours.items()}
+            # Logger.log(f'This cat spent time doing {state_hours}')
+            # Logger.log(f'This cat moved total distance of {cat.total_distance_moved:.2f} units')
 
-        Logger.log('Simulation is finished')
+        Logger.log('Simulation is is_finished')
         Logger.log(f'Elapsed {time.time() - self.start_time} s')
-
-        if self.render_enabled:
-            plt.show()

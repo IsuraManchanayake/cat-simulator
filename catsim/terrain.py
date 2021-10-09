@@ -34,6 +34,15 @@ class Cell:
     def get_consumed(self, consumed_amount):
         self.food_amount = max(0, self.food_amount - consumed_amount)
 
+    def get_color(self):
+        return int_to_color_hash(self.cell_type.value)
+
+    def get_x_trace_color(self):
+        return 1, 0, 0, self.x_trace
+
+    def get_y_trace_color(self):
+        return 0, 0, 1, self.y_trace
+
     def annot(self):
         s = ''
         s += f'{self.position}'
@@ -110,6 +119,7 @@ class Terrain:
         return self.cell_at(pos).cats
 
     def neighbors(self, center: Vec2, r: int, neighborhood: Neighborhood) -> List[Cell]:
+        r = round(r)
         if neighborhood == Neighborhood.Moore:
             positions = [center + Vec2(dx, dy) for dy in range(-r, r + 1) for dx in range(-r, r + 1)]
         else:
@@ -135,6 +145,30 @@ class Terrain:
             q_pxr = cross(q_p, r)
             q_pxs = cross(q_p, s)
             rxs = cross(r, s)
+            if q_pxs == 0.0:
+                # Starting position is on the boundary
+                if p == q or p == q + s:
+                    # starting point is a corner point
+                    if not self.is_position_valid(p + r):
+                        return p
+                c = Vec2(self.width / 2, self.height / 2)
+                a1 = cross(s, c - q)
+                a2 = cross(s, p + r - q)
+                if a2 == 0:
+                    # Both p and p + r on the bundary line i.e. co-linear
+                    u1 = (p + r - q).dot(s) / s.dot(s)
+                    if u1 < 0:
+                        return q
+                    elif u1 <= 1:
+                        return p + r
+                    else:
+                        return q + s
+                if a1 * a2 < 0:
+                    # Different sides of the boundary line
+                    return p
+                else:
+                    # None of the cases
+                    continue
             if q_pxr == 0.0 and rxs == 0.0:
                 # Co-linear
                 u1 = (p + r - q).dot(s) / s.dot(s)
@@ -190,52 +224,75 @@ class Terrain:
         # self.width + '\n') * self.height
         return res
 
-    def render(self):
-        xvalues = []
-        yvalues = []
-        cat_colors = []
-        cell_colors = []
-        for y in range(self.height):
-            cell_color_row = []
-            for x in range(self.width):
-                cell = self.grid[y][x]
-                cell_color_row.append(int_to_color_hash(cell.cell_type.value))
-                for cat in cell.cats:
-                    xvalues.append(x)
-                    yvalues.append(y)
-                    cat_colors.append(int_to_color_hash(cat.cat_id))
-            cell_colors.append(cell_color_row)
+    def _render_grids(self, axs):
+        for ax in axs:
+            ax.axis([-0.5, self.width - 0.5, -0.5, self.height - 0.5])
+            ax.axes.xaxis.set_visible(False)
+            ax.axes.yaxis.set_visible(False)
+            for tick in [*ax.xaxis.get_major_ticks(), *ax.yaxis.get_major_ticks()]:
+                tick.tick1line.set_visible(False)
+                tick.tick2line.set_visible(False)
+                tick.label1.set_visible(False)
+                tick.label2.set_visible(False)
+            for y in range(self.height - 1):
+                ax.axhline(y + 0.5, linestyle='-', lw=0.5, alpha=0.3)
+            for x in range(self.width - 1):
+                ax.axvline(x + 0.5, linestyle='-', lw=0.5, alpha=0.3)
 
-        sc = plt.scatter(xvalues, yvalues, c=cat_colors)
+    def render_init(self, plots, axs, fig):
+        ax1, ax2, ax3 = axs
+        self._render_grids(axs)
 
-        ax = plt.gca()
-        for y in range(self.height - 1):
-            ax.axhline(y + 0.5, linestyle='-', lw=0.5, alpha=0.3)
-        for x in range(self.width - 1):
-            ax.axvline(x + 0.5, linestyle='-', lw=0.5, alpha=0.3)
+        cell_type_colors = [[cell.get_color() for cell in row] for row in self.grid]
+        x_trace_colors = [[cell.get_x_trace_color() for cell in row] for row in self.grid]
+        y_trace_colors = [[cell.get_y_trace_color() for cell in row] for row in self.grid]
 
-        # ax.axes.xaxis.set_visible(False)
-        # ax.axes.yaxis.set_visible(False)
-
-        for tick in [*ax.xaxis.get_major_ticks(), *ax.yaxis.get_major_ticks()]:
-            tick.tick1line.set_visible(False)
-            tick.tick2line.set_visible(False)
-            tick.label1.set_visible(False)
-            tick.label2.set_visible(False)
-
-        im = ax.imshow(cell_colors, alpha=0.3)
+        ax1.title.set_text('Cat movement')
+        plots['sc'] = ax1.scatter([], [])
         patches = [mpatches.Patch(color=(*int_to_color_hash(cell_type.value), 0.3), label=str(cell_type))
                    for cell_type in CellType]
-        plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+        plots['legend'] = ax1.legend(handles=patches, borderaxespad=0.)
+        plots['im1'] = ax1.imshow(cell_type_colors, alpha=0.3)
+        # plots['annot1'] = ax1.annotate('', xy=(0, 0), xytext=(20, 20), textcoords='offset points',
+        #                                bbox=dict(boxstyle='round', fc='w'),
+        #                                arrowprops=dict(arrowstyle='->'))
+        # plots['annot2'] = ax2.annotate('', xy=(0, 0), xytext=(20, 20), textcoords='offset points',
+        #                                bbox=dict(boxstyle='round', fc='w'),
+        #                                arrowprops=dict(arrowstyle='->'))
+        # plots['annot3'] = ax3.annotate('', xy=(0, 0), xytext=(20, 20), textcoords='offset points',
+        #                                bbox=dict(boxstyle='round', fc='w'),
+        #                                arrowprops=dict(arrowstyle='->'))
+        for i in range(1, 4):
+            annot = axs[i - 1].annotate('', xy=(0, 0), xytext=(20, 20), textcoords='offset points',
+                                        bbox=dict(boxstyle='round', fc='w'),
+                                        arrowprops=dict(arrowstyle='->'))
+            annot.set_visible(False)
+            annot.set_zorder(100000)
+            plots[f'annot{i}'] = annot
+            fig.texts.append(axs[i - 1].texts.pop())
 
-        annot = ax.annotate('', xy=(0, 0), xytext=(20, 20), textcoords='offset points',
-                            bbox=dict(boxstyle='round', fc='w'),
-                            arrowprops=dict(arrowstyle='->'))
-        annot.set_visible(False)
+        ax2.title.set_text('X traces')
+        plots['im2'] = ax2.imshow(x_trace_colors)
 
-        def _update_annot(event, terrain):
-            annot.xy = (event.xdata, event.ydata)
+        ax3.title.set_text('Y traces')
+        plots['im3'] = ax3.imshow(y_trace_colors)
+
+    def render(self, plots, axs, fig):
+        ax1, ax2, ax3 = axs
+
+        cat_offsets = [(cat.position.x, cat.position.y) for row in self.grid for cell in row for cat in cell.cats]
+        x_trace_colors = [[cell.get_x_trace_color() for cell in row] for row in self.grid]
+        y_trace_colors = [[cell.get_y_trace_color() for cell in row] for row in self.grid]
+
+        plots['sc'].set_offsets(cat_offsets)
+        plots['im2'].set_array(x_trace_colors)
+        plots['im3'].set_array(y_trace_colors)
+
+        def _update_annot(event, terrain, i):
             pos = terrain.make_lattice(Vec2(event.xdata, event.ydata))
+            annot = plots[f'annot{i}']
+            annot.xy = (pos.x, pos.y)
+            annot.xy = (event.xdata, event.ydata)
             if pos.y > terrain.height / 2:
                 annot.xyann = (20, -60)
             else:
@@ -245,23 +302,20 @@ class Terrain:
             annot.set_visible(True)
 
         def _hover(event, terrain):
-            vis = annot.get_visible()
-            if event.inaxes == ax:
-                cont, ind = im.contains(event)
-                if cont:
-                    _update_annot(event, terrain)
-                    fig.canvas.draw_idle()
-                else:
-                    if vis:
-                        annot.set_visible(False)
+            for i in range(1, 4):
+                vis = plots[f'annot{i}'].get_visible()
+                if event.inaxes == axs[i - 1]:
+                    cont1, _ = plots[f'im{i}'].contains(event)
+                    if cont1:
+                        _update_annot(event, terrain, i)
                         fig.canvas.draw_idle()
-
-        fig = plt.gcf()
+                    else:
+                        if vis:
+                            plots[f'annot{i}'].set_visible(False)
+                            fig.canvas.draw_idle()
+                else:
+                    plots[f'annot{i}'].set_visible(False)
         fig.canvas.mpl_connect("motion_notify_event", lambda e: _hover(e, self))
-
-        plt.xlim(-0.5, self.width - 0.5)
-        plt.ylim(-0.5, self.height - 0.5)
-        plt.subplots_adjust(right=0.8)
 
     def serialize(self):
         return dict(

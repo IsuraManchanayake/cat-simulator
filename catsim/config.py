@@ -6,7 +6,7 @@ from .enums import CellType
 class Config:
     hours_to_deliver_offspring = 10
     max_trace = 1
-    trace_fading_factor = 0.6
+    trace_fading_factor = 0.9
     force_wake_up_health = 10
     max_life_span = 10
     sleep_time = 4

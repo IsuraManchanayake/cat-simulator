@@ -39,7 +39,7 @@ def random_cell_type_list(k):
 
 
 def calc_force(magnitude: float, from_v: Vec2, to_v: Vec2):
-    return 10 * magnitude * (to_v - from_v).unit()
+    return magnitude * (to_v - from_v).unit()
 
 
 def get_sleep_probability(cell_type, health):
