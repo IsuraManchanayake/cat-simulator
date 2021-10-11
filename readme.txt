@@ -67,11 +67,11 @@ Example
 
 Example 1
 
-$ python main.py --t_elevations_file elevation.txt --t_cell_types_file cell_types.txt --t_height 10 --t_width 10 --neighborhood von-neumann --neighborhood_radius 3 --population 10 --n_steps 10 --seed 0
+$ python main.py --t_elevations_file elevation.txt --t_cell_types_file cell_types.txt --t_height 10 --t_width 10 --neighborhood von-neumann --neighborhood_radius 3 --population 10 --n_steps 120 --seed 0
 
 Example 2
 
-$ python main.py --t_height 30 --t_width 30 --neighborhood von-neumann --neighborhood_radius 3 --population 20 --n_steps 50 --seed 0
+$ python main.py --t_height 30 --t_width 30 --neighborhood von-neumann --neighborhood_radius 3 --population 50 --n_steps 100 --seed 0
 
 
 Log files

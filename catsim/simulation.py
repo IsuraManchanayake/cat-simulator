@@ -3,6 +3,7 @@ import math
 import random
 import time
 from datetime import datetime
+from platform import system
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -58,6 +59,7 @@ class Simulation:
         self.elevations = None
         self.cell_types = None
         self.current_population = None
+        self.results_file_path = None
 
         self._cats = []  # For internal tracking
 
@@ -96,8 +98,9 @@ class Simulation:
         self.neighborhood = Neighborhood.Moore if self.args.neighborhood == 'moore' else Neighborhood.VonNeumann
         self.neighborhood_radius = self.args.neighborhood_radius
         self.continuous_food = self.args.continuous_food
-        self.current_population = self.population
+        self.results_file_path = self.args.results_file_path
 
+        self.current_population = self.population
         self.step = 0
 
         random.seed(self.seed)
@@ -217,8 +220,9 @@ class Simulation:
             current_population=self.current_population,
             cat_next_id=Cat.next_id(),
             elevations=self.elevations,
-            cell_types=[str(ct) for ct in self.cell_types],
+            cell_types=[[str(ct) for ct in row] for row in self.cell_types],
             terrain=self.terrain.serialize(),
+            cats=[cat.serialize() for cat in self._cats],
         )
 
     def save_state(self):
@@ -451,8 +455,31 @@ class Simulation:
             yield self.step,
         self._finalize()
 
+    @staticmethod
+    def _show_window():
+        # Show maximized window
+        backend = plt.get_backend()
+        cfm = plt.get_current_fig_manager()
+        if backend == "wxAgg":
+            cfm.frame.Maximize(True)
+        elif backend == "TkAgg":
+            if system() == "Windows":
+                cfm.window.state("zoomed")  # This is windows only
+            else:
+                cfm.resize(*cfm.window.maxsize())
+        elif backend == "QT4Agg":
+            cfm.window.showMaximized()
+        elif callable(getattr(cfm, "full_screen_toggle", None)):
+            if not getattr(cfm, "flag_is_max", None):
+                cfm.full_screen_toggle()
+                cfm.flag_is_max = True
+        else:
+            raise RuntimeError("plt_maximize() is not implemented for current backend:", backend)
+        plt.show()
+
     def start(self):
         if self.render_enabled:
+            plt.rcParams['font.family'] = 'monospace'
             self.fig, self.axs = plt.subplots(1, 3)
             self.ani = animation.FuncAnimation(
                 plt.gcf(),
@@ -463,7 +490,7 @@ class Simulation:
                 interval=self.render_pause_interval * 1000,
                 repeat=False,
             )
-            plt.show()
+            self._show_window()
         else:
             for _step in self._loop():
                 continue
@@ -475,8 +502,6 @@ class Simulation:
         Logger.sep()
         Logger.log('Simulation is finishing')
 
-        self._cats.sort(key=lambda c: c.cat_id)
-
         if not self.continuous_food:
             for y in range(self.height):
                 for x in range(self.width):
@@ -484,7 +509,10 @@ class Simulation:
                     if cell.cell_type == CellType.food:
                         Logger.log(f'Cell at {cell.position} has {cell.food_amount} food remaining')
 
-        Logger.log(f'{len(self._cats)} cats alive')
+        self._cats.sort(key=lambda c: c.cat_id)
+        alive = sum([cat.is_alive() for cat in self._cats])
+        Logger.log(f'{alive} cats alive')
+
         for cat in self._cats:
             Logger.log(f'{cat}')
             Logger.log(cat.summary)
@@ -492,5 +520,9 @@ class Simulation:
             # Logger.log(f'This cat spent time doing {state_hours}')
             # Logger.log(f'This cat moved total distance of {cat.total_distance_moved:.2f} units')
 
-        Logger.log('Simulation is is_finished')
+        with open(self.results_file_path, 'w') as rf:
+            data = self.serialize()
+            json.dump(data, rf, indent=4)
+
+        Logger.log('Simulation is finished')
         Logger.log(f'Elapsed {time.time() - self.start_time} s')

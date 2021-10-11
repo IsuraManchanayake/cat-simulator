@@ -77,6 +77,18 @@ def parse_args():
              'specified, cell types are chosen random. If invalid, the simulation exits.',
     )
     parser.add_argument(
+        '--log_file_path',
+        type=str,
+        help='All logs go into this file.',
+        default='simulation.log'
+    )
+    parser.add_argument(
+        '--results_file_path',
+        type=str,
+        help='Simulation results as json file.',
+        default='simulation-results.json',
+    )
+    parser.add_argument(
         '--seed',
         type=int,
         default=0,

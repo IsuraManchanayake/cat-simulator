@@ -13,7 +13,8 @@ class Vec2:
         return Vec2(self.x * other, self.y * other)
 
     def __sub__(self, other: 'Vec2') -> 'Vec2':
-        return self + other * -1
+        # return self + other * -1
+        return Vec2(self.x - other.x, self.y - other.y)
 
     def __eq__(self, other):
         return self.x == other.x and self.y == other.y
@@ -27,7 +28,7 @@ class Vec2:
         norm = self.norm()
         if norm == 0:
             return Vec2(0, 0)
-        return (1 / self.norm()) * self
+        return (1 / norm) * self
 
     def dot(self, other: 'Vec2'):
         return self.x * other.x + self.y * other.y
@@ -37,8 +38,6 @@ class Vec2:
 
     def __repr__(self):
         return f'{{x={round(self.x, 3)},y={round(self.y, 3)}}}'
-        # return f'{{x={self.x:.2f},y={self.y:.2f}}}'
-        # return f'Vec2{{x={self.x},y={self.y}}}'
 
 
 def mapf(x, a, b, p, q):

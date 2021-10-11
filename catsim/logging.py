@@ -10,16 +10,21 @@ class Logger:
     # simulation = None
 
     @staticmethod
-    def setup(method, file='simulation.log'):
+    def setup(method, file=None):
+        if file is None:
+            file = 'simulation.log'
         Logger.method = method
-        # Logger.simulation = simulation
         Logger.file = file
 
         # Erase content
-        open(Logger.file, 'w')
+        if method == LogMethod.file:
+            open(Logger.file, 'w')
 
     @staticmethod
     def log(*args, **kwargs):
+        if Logger.method == LogMethod.none:
+            return
+
         now = datetime.now()
 
         sout = io.StringIO()

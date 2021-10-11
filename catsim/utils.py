@@ -73,3 +73,15 @@ def int_to_float_hash(a):
 def int_to_color_hash(a):
     f = int_to_float_hash
     return f(a), f(a * 2), f(3 * a - 1)
+
+
+def cell_type_to_color(cell_type):
+    return int_to_color_hash(cell_type.value)
+    # if cell_type == CellType.floor:
+    #     return [1.0, 0.0, 0.0]  # red
+    # elif cell_type == CellType.food:
+    #     return [0.0, 1.0, 0.0]  # green
+    # elif cell_type == CellType.bed:
+    #     return [0.0, 0.0, 1.0]  # blue
+    # elif cell_type == CellType.box:
+    #     return [1.0, 1.0, 0.0]  # yellow

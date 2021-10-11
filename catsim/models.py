@@ -47,6 +47,19 @@ class CatSummary:
     def update_state_hours(self, state, hours):
         self.state_hours[state] += hours
 
+    def serialize(self):
+        return dict(
+            state_hours={str(state) : hours for state, hours in self.state_hours.items()},
+            attacked=self.attacked,
+            got_attacked=self.got_attacked,
+            conceived=self.conceived,
+            delivered=self.delivered,
+            lost_health=self.lost_health,
+            consumed_food=self.consumed_food,
+            moved=self.moved,
+            aged=self.aged,
+        )
+
     def __repr__(self):
         state_hours = {str(state): hours for state, hours in self.state_hours.items()}
         return f'Summary{{state_hours={state_hours}, attacked={self.attacked}, got_attacked={self.got_attacked}' \
@@ -301,6 +314,9 @@ class Cat:
     def is_sleeping(self):
         return self.state == State.sleeping
 
+    def is_alive(self):
+        return self.state == State.active or self.state == State.sleeping
+
     def should_die(self):
         return self.health <= 0 or self.age >= Config.max_life_span
 
@@ -338,6 +354,7 @@ class Cat:
             sleep_duration=self.sleep_duration,
             position=self.position.serialize(),
             fetus=self.fetus.serialize() if self.fetus is not None else None,
+            summary=self.summary.serialize(),
         )
 
     def __repr__(self):

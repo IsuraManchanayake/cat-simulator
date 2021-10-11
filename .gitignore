@@ -151,3 +151,4 @@ fabric.properties
 
 cat-simulator.zip
 states/*
+simulation-results.json

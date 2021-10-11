@@ -6,8 +6,8 @@ from catsim.logging import Logger, LogMethod
 def main():
     args = parse_args()
 
-    Logger.setup(LogMethod.file)
-    # Logger.setup(LogMethod.none)
+    # Logger.setup(LogMethod.file, args.log_file_path)
+    Logger.setup(LogMethod.none)
 
     simulation = Simulation(args)
     # simulation.render_enabled = False
